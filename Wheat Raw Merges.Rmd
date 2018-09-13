@@ -1,0 +1,795 @@
+---
+title: "R import merge"
+author: "Toby Maxwell"
+date: "7/18/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+commonall<-read.csv("/Users/Maxwell/Documents/GitHub/Wheat/commonall.2.csv")
+str(commonall)
+commonavg<-read.csv("/Users/Maxwell/Documents/GitHub/Wheat/commonavg3.csv")
+commonavg[commonavg$Texture=="Complex",]
+levels(commonavg$Texture)
+str(commonavg)
+commonavg$Diseasepres<-commonavg$BYDV+commonavg$StripeRust+commonavg$LeafRust+commonavg$Septoria+commonavg$YellowBerry
+commonavg[is.na(commonavg$Diseasepres),]$Diseasepres<-0
+plot(Yield~Diseasepres, commonavg)
+summary(lm(Yield~Diseasepres, commonavg))
+commonall$WUE<-commonall$Yield/commonall$Water.Total
+commonavg$NUE<-(commonavg$Protein*commonavg$Yield)/commonavg$Total.N
+commonall$NUE<-(commonall$Protein*commonall$Yield)/commonall$Total.N
+plot(commonall$NUE~commonall$Location)
+library(plyr)
+commoncult<-ddply(commonall[is.finite(commonall$Yield)|is.finite(commonall$WUE)|is.finite(commonall$NUE),], .(Cultivar),summarise,
+                              Yield = mean(Yield),
+                              WUE=mean(WUE),
+                              NUE=mean(NUE))
+
+commonloc<-ddply(commonall[is.finite(commonall$Yield)|is.finite(commonall$WUE)|is.finite(commonall$NUE),], .(Location),summarise,
+                              Yield = mean(Yield),
+                              WUE=mean(WUE),
+                              NUE=mean(NUE))
+
+commonsite<-NULL
+commonsite<-ddply(commonall[is.finite(commonall$Yield)|is.finite(commonall$WUE)|is.finite(commonall$NUE),], .(Location, Year),summarise,
+                              Yield = mean(Yield),
+                              WUE=mean(WUE),
+                              NUE=mean(NUE))
+
+commonsite<-merge(commonsite, LtoCounty, by = "Location")
+commoncount<-ddply(commonsite[is.finite(commonall$Yield)|is.finite(commonall$WUE)|is.finite(commonall$NUE),], .(County),summarise,
+                   Yield = mean(Yield),
+                   WUE = mean(WUE),
+                  NUE = mean(NUE))
+
+commoncount 
+
+commonirr<-ddply(commonavg, .(Year, Location, Irrigation.Method),summarise,
+                  Yield = mean(Yield),
+                   WUE = mean(WUE),
+                  NUE = mean(NUE))
+
+
+commonirr<-ddply(commonirr[is.finite(commonirr$NUE),], .(Irrigation.Method),summarise,
+                 sd.NUE=sd(NUE),           
+                 NUE = mean(NUE))
+
+sd(commonirr$NUE)
+
+commontex<-ddply(commonavg, .(Year, Location, Texture),summarise,
+                  Yield = mean(Yield),
+                   WUE = mean(WUE),
+                  NUE = mean(NUE))
+
+
+commontex<-ddply(commontex[is.finite(commontex$NUE),], .(Texture),summarise,
+                 sd.NUE=sd(NUE),           
+                 NUE = mean(NUE))
+
+mean(commontex$NUE)
+
+commonyr<-ddply(commonall, .(Year, Location),summarise,
+                  Yield = mean(Yield),
+                   WUE = mean(WUE),
+                  NUE = mean(NUE))
+
+
+commonyr<-ddply(commonyr[is.finite(commonyr$NUE),], .(Year),summarise,
+                 sd.NUE=sd(NUE),           
+                 NUE = mean(NUE))
+
+mean(commonyr$NUE)
+```
+#ETo
+```{r}
+commonET<-ddply(commonavg, .(County, Year),summarise,
+                              Yield = mean(Yield),
+                              WUE=mean(WUE),
+                              NUE=mean(NEff),
+                              ETo=mean(ETo),
+                              MAT=mean(MAT))
+str(commonET)
+listofcats1 <- levels(as.factor(commonET$County)) #here, remove columns containing categorical variables. I also remove the column for the variable that I'm regressing everything else against.
+listofcats1<-listofcats1[-16:-17]
+listofcats1<-listofcats1[-10]
+pvals1 <- NULL
+R21 <- NULL
+coef1 <- NULL
+for (cat in listofcats1) {
+  regress <- lm(MAT~Year, data=commonET[commonET$County==cat,]) # statistical analysis of interest
+  pvals1 <- c(anova(regress)$'Pr(>F)'[1], pvals1) # change so you're pulling p-values from right place 
+  R21 <- c(summary(regress)$adj.r.squared[1], R21) # etc
+  coef1 <- c(summary(regress)$coef[2], coef1) # pull
+  
+} #Sigyield list of positive time series
+
+pvals.bonf1 <- p.adjust(pvals1, method="bonferroni") # Bonferroni correction for multiple comparisons
+regression <- data.frame(rev(listofcats1), coef1, R21, pvals1, pvals.bonf1)
+regression
+write.csv(regression, '/Users/tobymaxwell/Desktop/regression.csv', 
+          row.names=FALSE) 
+
+# subset of the significant regressions
+significant <- subset(regression, pvals1<0.1)
+sig_cats <- significant["rev.listofcats1."]
+sig_cats
+
+```
+
+#Yield
+```{r}
+####Yield####
+commonsite.yield<-na.omit(commonsite[-4:-5])
+str(commonsite.yield)
+commonsite.yield.avg<-ddply(commonsite.yield, .(Location, County, Year), summarise, 
+                Yield = mean(Yield),
+                Lat = mean(Lat),
+                long = mean(long))
+
+commonsite.yield.avg
+library(ggplot2)
+ggplot(commonsite.yield.avg, aes(y=Yield, Year))+geom_point()+facet_wrap(~County, scales = "free")+geom_smooth(method = "lm")
+
+str(commonsite.yield.avg)
+
+listofcats1 <- levels(as.factor(commonsite.yield.avg$County)) #here, remove columns containing categorical variables. I also remove the column for the variable that I'm regressing everything else against.
+
+#Make dummy variables that you will fill as you run for loop
+pvals1 <- NULL
+R21 <- NULL
+coef1 <- NULL
+for (cat in listofcats1) {
+  regress <- lm(Year~Yield, data=commonsite.yield.avg[commonsite.yield.avg$Location==cat,]) # statistical analysis of interest
+  pvals1 <- c(anova(regress)$'Pr(>F)'[1], pvals1) # change so you're pulling p-values from right place 
+  R21 <- c(summary(regress)$adj.r.squared[1], R21) # etc
+  coef1 <- c(summary(regress)$coef[2], coef1) # pull
+  
+} #Sigyield list of positive time series
+
+pvals.bonf1 <- p.adjust(pvals1, method="bonferroni") # Bonferroni correction for multiple comparisons
+regression <- data.frame(rev(listofcats1), coef1, R21, pvals1, pvals.bonf1)
+regression
+write.csv(regression, '/Users/tobymaxwell/Desktop/regression.csv', 
+          row.names=FALSE) 
+
+# subset of the significant regressions
+significant <- subset(regression, pvals1<0.1)
+sig_cats <- significant["rev.listofcats1."]
+sig_cats
+
+commonall$Cultivar<-as.factor(commonall$Cultivar)
+str(commonavg)
+commonavg.scaled<-commonavg
+<<<<<<< HEAD
+commonavg.scaled[7:41]<-scale(commonavg.scaled[7:41])
+=======
+commonavg.scaled[7:37]<-scale(commonavg.scaled[7:37])
+>>>>>>> parent of 74df382... raw merges starting from pre-loaded dfs
+str(commonavg.scaled)
+
+commonavg.scaled$tukeykey<-paste0(commonavg.scaled$ETzone,commonavg.scaled$sowingmonth, commonavg.scaled$County, commonavg.scaled$Texture)
+###Significant yield over time
+sigyield<-commonavg.scaled[commonavg.scaled$County=="Yolo"|commonavg.scaled$County=="Madera"|commonavg.scaled$County=="Glenn"|commonavg.scaled$County=="Fresno",]
+str(sigyield)
+#NS yield over time
+nsyield<-commonavg.scaled[commonavg.scaled$County!="Yolo"&commonavg.scaled$County!="Madera"&commonavg.scaled$County!="Imperial"&commonavg.scaled$County!="Glenn"&commonavg.scaled$County!="Fresno"|commonavg.scaled$County!="Imperial",]
+
+#Imperial
+impyield<-commonavg.scaled[commonavg.scaled$County=="Imperial",]
+
+##again for mixed models
+library(lme4)
+library(sjPlot)
+#Loops####
+list<-c("Preplant.N", "Anthesis.N", "Tillering", "Aq.N", "With.Seed", "Total.P", "Total.K", "Total.N","Water.Total","Rain","Irrigation.Total","Irrigation.Method", "StripeRust","LeafRust","BYDV","Septoria","LHarvest","YellowBerry", "Rain", "MAP", "MAT", "ETo", "deficit")
+
+  for(i in list){
+  formula <- as.formula(paste0("Yield~", i, "+", paste("(1|Texture)", "(1|County)+(1|Cultivar)", "(1|ETzone)", "(1|sowingmonth)", sep = "+")))
+  regress <- lmer(formula, data=sigyield) # statistical analysis of interest
+  assign(noquote(paste0(i)), regress)
+      } #sigyield
+sjt.lmer(Preplant.N, Anthesis.N, Tillering, Aq.N, With.Seed, Total.P, Total.K, Total.N, p.kr=FALSE)
+sjt.lmer(Water.Total,Rain,Irrigation.Total,Irrigation.Method, p.kr=FALSE)
+sjt.lmer(StripeRust,LeafRust,BYDV,Septoria,LHarvest,YellowBerry, p.kr=FALSE)
+sjt.lmer(Rain, MAP, MAT, deficit,ETo, p.kr=FALSE)
+
+  for(i in list){
+  formula <- as.formula(paste0("Yield~", i, "+", paste("(1|County)", "(1|Texture)", "(1|Cultivar)", "(1|ETzone)", "(1|sowingmonth)", sep = "+")))
+  regress <- lmer(formula, data=nsyield) # statistical analysis of interest
+  assign(noquote(paste0(i)), regress)
+      } #nsyield
+sjt.lmer(Preplant.N, Anthesis.N, Tillering, Aq.N, With.Seed, Total.P, Total.K,Total.N, p.kr=FALSE)
+sjt.lmer(Water.Total,Rain,Irrigation.Total,Irrigation.Method, p.kr=FALSE)
+sjt.lmer(StripeRust,LeafRust,BYDV,Septoria,LHarvest,YellowBerry, p.kr=FALSE)
+sjt.lmer(Rain, MAP, MAT, deficit,ETo, p.kr=FALSE)
+
+list<-c("Preplant.N", "Anthesis.N", "Tillering", "Aq.N", "With.Seed", "Total.P", "Total.K", "Total.N","Water.Total","Rain","Irrigation.Total", "BYDV","LHarvest","YellowBerry", "Rain", "MAP", "ETo", "MAT", "deficit" )
+
+  for(i in list){
+  formula <- as.formula(paste0("Yield~", i, "+", paste("(1|Texture)", "(1|Cultivar)", sep = "+")))
+  regress <- lmer(formula, data=impyield) # statistical analysis of interest
+  assign(noquote(paste0(i)), regress)
+  }
+sjt.lmer(Preplant.N, Tillering, Aq.N, With.Seed, Total.P,Total.N, p.kr=FALSE)
+sjt.lmer(Water.Total,Rain,Irrigation.Total, p.kr=FALSE)
+sjt.lmer(BYDV,LHarvest,YellowBerry, p.kr=FALSE)
+sjt.lmer(Rain, MAP, MAT, deficit,ETo, p.kr=FALSE)
+```
+
+###Leaps Yield####
+```{r}
+library(leaps)
+str(sigyield)
+sigyield.leap<-sigyield[-24:-25]
+sigyield.leap<-sigyield.leap[-24]#Plantht
+sigyield.leap<-sigyield.leap[-29]
+str(sigyield.leap)
+
+reg.sig<-regsubsets(Yield~., sigyield.leap[5:30], nvmax = ,really.big=T)
+
+Sig.summary<-summary(reg.sig)
+coef(reg.sig,8)
+
+par(mfrow = c(2,2), mar = c(4,4,2,2))
+plot (Sig.summary$rss, xlab="Number of Variables", ylab="RSS", type="l")
+
+plot (Sig.summary$adjr2, xlab="Number of Variables", ylab="Adjusted RSq", type="l") 
+points(which.max(Sig.summary$adjr2) , Sig.summary$adjr2[which.min(Sig.summary$bic)], col="red", cex=2, pch=20) 
+
+plot (Sig.summary$cp, xlab="Number of Variables", ylab="Cp", type="l") 
+points(which.min(Sig.summary$cp), Sig.summary$cp [which.min(Sig.summary$bic)],col="red",cex=2,pch=20)
+
+plot (Sig.summary$bic, xlab="Number of Variables", ylab="BIC", type='l')
+points(which.min(Sig.summary$bic), Sig.summary$bic [which.min(Sig.summary$bic)],col="red", cex=2, pch=20)
+
+#plot (reg.sig, scale="adjr2", main = "Nrsq")
+#plot (reg.sig, scale="bic", main = "Nbic")
+#plot (reg.sig, scale="Cp", main = "Nbic")
+
+#Non sig yield
+str(nsyield)
+nsyield$ETzone<-as.factor(nsyield$ETzone)
+nsyield.leap<-nsyield[-24:-25]
+
+str(nsyield.leap)
+#M <- cor(nsyield.leap[5:32], use = "complete.obs")
+summary(lm(Yield~StripeRust,sigyield))
+nsyield$County<-as.factor(nsyield$County)
+nsyield$Cultivar<-as.factor(nsyield$Cultivar)
+str(nsyield.leap)
+reg.ns<-regsubsets(Yield~., nsyield.leap[5:32], nvmax = 20,really.big=T)
+
+ns.summary<-summary(reg.ns)
+coef(reg.ns,5)
+
+par(mfrow = c(2,2), mar = c(4,4,2,2))
+plot (ns.summary$rss, xlab="Number of Variables", ylab="RSS", type="l")
+
+plot (ns.summary$adjr2, xlab="Number of Variables", ylab="Adjusted RSq", type="l") 
+points(which.max(ns.summary$adjr2) , ns.summary$adjr2[which.min(ns.summary$bic)], col="red", cex=2, pch=20) 
+
+plot (ns.summary$cp, xlab="Number of Variables", ylab="Cp", type="l") 
+points(which.min(ns.summary$cp), ns.summary$cp [which.min(ns.summary$bic)],col="red",cex=2,pch=20)
+
+plot (ns.summary$bic, xlab="Number of Variables", ylab="BIC", type='l')
+points(which.min(ns.summary$bic), ns.summary$bic [which.min(ns.summary$bic)],col="red", cex=2, pch=20)
+
+#par(mfrow = c(3,1))
+#plot (reg.ns, scale="adjr2", main = "Nrsq")
+#plot (reg.ns, scale="bic", main = "Nbic")
+#plot (reg.ns, scale="Cp", main = "Nbic")
+
+coef(reg.ns,7)
+lmer.ns.5<-(lmer(Yield~Year+Diseasepres+LHarvest+Sowing+With.Seed+Water.Total+(1|County/Cultivar)+(1|Texture)+(1/ETzone), nsyield))
+lmer.ns.7<-lmer(Yield~Year+Diseasepres+LHarvest+Sowing+With.Seed+Tillering+Water.Total+Fert.Number+(1|County/Cultivar)+(1|Texture)+(1/ETzone), nsyield)
+lmer.ns.2<-lmer(Yield~Tillering+Anthesis.N+LHarvest+Septoria+Irr.Applications+(1|County/Cultivar)+(1|Texture)+(1/ETzone), nsyield)
+
+library(sjPlot)
+#sjt.lmer(lmer.ns.2)
+#sjt.lmer(lmer.ns.2, lmer.ns.5, lmer.ns.7)
+coef(reg.sig, 8)
+lmer.sig<-(lmer(Yield~Year+Preplant.N+Septoria+LHarvest+Tillering+Water.Total+Total.N+ETo+(1|County/Cultivar)+Texture+(1|ETzone), sigyield))
+lmer.sig.6<-(lmer(Yield~Year+LeafRust+Septoria+LHarvest+Water.Total+Irr.Applications+Fert.Number+Texture+(1|County/Cultivar)+(1|ETzone), sigyield))
+lmer.sig.8<-(lmer(Yield~Year+Septoria+Diseasepres+LHarvest+Preplant.N+Tillering+Water.Total+ETo+Fert.Number+(1|County/Cultivar)+Texture+(1|ETzone), sigyield))
+#sjt.lmer(lmer.sig, lmer.sig.6, lmer.sig.8)
+str(sigyield)
+#sjt.lmer(lmer.sig, lmer.sig.6, lmer.sig.8, lmer.ns.2, lmer.ns.5, lmer.ns.7)
+summary(lm(Yield~Texture, sigyield))
+
+
+lmer.Water.sig<-lmer(Yield~Water.Total+Rain+Irrigation.Total+Irrigation.Method+(1|County/Cultivar)+(1|Texture)+(1|ETzone)+(1|sowingmonth), sigyield)
+lmer.Water.ns<-lmer(Yield~Water.Total+Rain+Irrigation.Total+Irrigation.Method+(1|County/Cultivar)+(1|Texture)+(1|ETzone)+(1|sowingmonth), nsyield)
+lmer.water.imp<-lmer(Yield~Water.Total+Rain+Irrigation.Total+(1|Cultivar), impyield)
+
+sjt.lmer(lmer.Water.sig, lmer.Water.ns, lmer.water.imp, p.kr=FALSE)
+
+
+lmer.Dis.sig<-lmer(Yield~StripeRust+LeafRust+BYDV+Septoria+LHarvest+(1|Cultivar)+(1|Texture)+(1|sowingmonth), sigyield)
+sjt.lmer(lmer.Dis.sig, p.kr=FALSE)
+lmer.Dis.ns<-lmer(Yield~StripeRust+LeafRust+BYDV+Septoria+LHarvest+(1|County/Cultivar)+(1|Texture)+(1|ETzone)+(1|sowingmonth), nsyield)
+lmer.Dis.imp<-lmer(Yield~BYDV+LHarvest+(1|Texture)+(1|Cultivar), impyield)
+min(impyield$LHarvest)
+sjt.lmer(lmer.Dis.sig, lmer.Dis.ns, lmer.Dis.imp, p.kr=FALSE)
+BYDV.sig<-lmer(Yield~BYDV +(1|Cultivar)+(1|Texture)+(1|sowingmonth),sigyield )
+sjt.lmer(BYDV.sig, p.kr=FALSE)
+library(agricolae)
+water.sig.m<-lm(Yield~Irrigation.Method, data = sigyield)
+anova(water.sig.m)
+tukey<-HSD.test(water.sig.m, trt = "Texture", DFerror=3887, .581, alpha = .05, group = TRUE)
+tukey
+
+water.ns.m<-lm(Yield~Texture, data = nsyield)
+anova(water.ns.m)
+tukey<-HSD.test(water.ns.m, trt = "Texture", 12404, .913, alpha = .05, group = TRUE)
+tukey
+
+str(sigyield)
+
+```
+
+
+#WUE
+```{r}
+str(commonsite)
+commonsite.WUE<-na.omit(commonsite[-5])
+str(commonsite.WUE)
+
+commonsite.wue.avg<-ddply(commonsite.WUE, .(County, Year), summarise, 
+                            wue = mean(WUE))
+commonsite.wue.avg<-commonsite.wue.avg[is.finite(commonsite.wue.avg$wue),] #getrid of inf values
+
+str(commonsite.wue.avg)
+ggplot(commonsite.wue.avg, aes(y=wue, Year))+geom_point()+facet_wrap(~County, scales = "free")+geom_smooth(method = "lm")
+
+str(commonsite.wue.avg)
+
+listofcats1 <- levels(as.factor(commonsite.wue.avg$County)) #here, remove columns containing categorical variables. I also remove the column for the variable that I'm regressing everything else against. 
+
+#Make dummy variables that you will fill as you run for loop
+pvals1 <- NULL
+R21 <- NULL
+coef1 <- NULL
+
+for (cat in listofcats1) {
+  regress <- lm(Year~wue, data=commonsite.wue.avg[commonsite.wue.avg$County==cat,]) # statistical analysis of interest
+  pvals1 <- c(anova(regress)$'Pr(>F)'[1], pvals1) # change so you're pulling p-values from right place 
+  R21 <- c(summary(regress)$adj.r.squared[1], R21) # etc
+  coef1 <- c(summary(regress)$coef[2], coef1) # pull
+  
+}
+
+pvals.bonf1 <- p.adjust(pvals1, method="bonferroni") # Bonferroni correction for multiple comparisons
+regression <- data.frame(rev(listofcats1), coef1, R21, pvals1, pvals.bonf1)
+regression
+write.csv(regression, '/Users/tobymaxwell/Desktop/regression.WUE.csv', 
+          row.names=FALSE) 
+
+
+significant <- subset(regression, pvals1<0.1)
+sig_cats <- significant["rev.listofcats1."]
+sig_cats 
+#kern
+#imperial
+
+##Subset the significant regressions
+str(commonavg.scaled)
+commonavg.wue<-commonavg[is.finite(commonavg$WUE),]
+str(commonavg.wue)
+commonavg.wue.scaled<-commonavg.wue
+commonavg.wue.scaled[6:36]<-scale(commonavg.wue.scaled[6:36])
+str(commonavg.wue.scaled)
+sigwue<-commonavg.wue.scaled[commonavg.wue.scaled$County=="Kern",]
+nswue<-commonavg.wue.scaled[commonavg.wue.scaled$County!="Kern"&commonavg.wue.scaled$County!="Imperial",]
+impwue<-commonavg.wue.scaled[commonavg.wue.scaled$County=="Imperial",]
+
+#Loops####
+
+list<-c("Preplant.N", "Anthesis.N", "Tillering", "Aq.N", "With.Seed", "Total.P", "Total.K", "Total.N","Rain","Irrigation.Total","Irrigation.Method", "StripeRust","LeafRust","BYDV", "LHarvest","YellowBerry", "Rain", "MAP", "MAT", "ETo", "deficit")
+  for(i in list){
+  formula <- as.formula(paste0("WUE~", i, "+", paste("(1|Cultivar)", "(1|Texture)", "(1|sowingmonth)", sep = "+")))
+  regress <- lmer(formula, data=sigwue) # statistical analysis of interest
+  assign(noquote(paste0(i)), regress)
+      } #sigyield
+
+sjt.lmer(Preplant.N, Aq.N, With.Seed, Total.P, Total.K, Total.N, p.kr=FALSE)
+sjt.lmer(Rain,Irrigation.Total,Irrigation.Method, p.kr=FALSE)
+sjt.lmer(StripeRust,LeafRust,BYDV,LHarvest,YellowBerry, p.kr=FALSE)
+sjt.lmer(Rain, MAP, MAT, ETo, deficit, p.kr=FALSE)
+
+list<-c("Preplant.N", "Anthesis.N", "Tillering", "Aq.N", "With.Seed", "Total.P", "Total.K", "Total.N","Rain","Irrigation.Total","Irrigation.Method", "StripeRust","LeafRust","Septoria", "BYDV", "LHarvest","YellowBerry", "Rain", "MAP", "MAT", "ETo", "deficit")
+  for(i in list){
+  formula <- as.formula(paste0("WUE~", i, "+", paste("(1|Cultivar)", "(1|County)", "(1|Texture)", "(1|ETzone)", "(1|sowingmonth)", sep = "+")))
+  regress <- lmer(formula, data=nswue) # statistical analysis of interest
+  assign(noquote(paste0(i)), regress)
+      } #nsyield
+sjt.lmer(Preplant.N, Anthesis.N, Tillering, Aq.N, With.Seed, Total.P, Total.K, Total.N, p.kr=FALSE)
+sjt.lmer(Rain,Irrigation.Total,Irrigation.Method, p.kr=FALSE)
+sjt.lmer(StripeRust,LeafRust,BYDV,Septoria,LHarvest,YellowBerry, p.kr=FALSE)
+sjt.lmer(Rain, MAP, MAT, deficit, ETo, p.kr=FALSE)
+
+list<-c("Preplant.N", "Anthesis.N", "Tillering", "Aq.N", "With.Seed", "Total.P", "Total.K", "Total.N","Rain","Irrigation.Total", "BYDV","LHarvest","YellowBerry", "Rain", "MAP", "MAT", "ETo", "deficit" )
+  for(i in list){
+  formula <- as.formula(paste0("WUE~", i, "+", paste("(1|Cultivar)", "(1|Texture)", sep = "+")))
+  regress <- lmer(formula, data=impwue) # statistical analysis of interest
+  assign(noquote(paste0(i)), regress)
+      } #sigyield
+sjt.lmer(Preplant.N, Tillering, Aq.N, With.Seed, Total.P,Total.N, p.kr=FALSE)
+sjt.lmer(Rain,Irrigation.Total, p.kr=FALSE)
+sjt.lmer(BYDV,LHarvest,YellowBerry, p.kr=FALSE)
+sjt.lmer(Rain, MAP, MAT, deficit, ETo, p.kr=FALSE)
+         
+
+str(sigwue)
+sigwue.leap<-sigwue
+str(sigwue.leap)
+#M <- cor(sigwue.leap[6:34], use = "complete.obs")
+str(sigwue.leap)
+sigwue.leap<-sigwue.leap[-25]
+sigwue.leap<-sigwue.leap[-23]
+sigwue.leap<-sigwue.leap[-27]
+sigwue.leap<-sigwue.leap[-24:-27]
+reg.sig<-regsubsets(WUE~., sigwue.leap[7:24], nvmax = 20,really.big=T)
+
+sig.summary<-summary(reg.sig)
+
+par(mfrow = c(2,2), mar = c(4,4,2,2))
+plot (sig.summary$rss, xlab="Number of Variables", ylab="RSS", type="l")
+
+plot (sig.summary$adjr2, xlab="Number of Variables", ylab="Adjusted RSq", type="l") 
+points(which.max(sig.summary$adjr2) , sig.summary$adjr2[which.min(sig.summary$bic)], col="red", cex=2, pch=20) 
+
+plot (sig.summary$cp, xlab="Number of Variables", ylab="Cp", type="l") 
+points(which.min(sig.summary$cp), sig.summary$cp [which.min(sig.summary$bic)],col="red",cex=2,pch=20)
+
+plot (sig.summary$bic, xlab="Number of Variables", ylab="BIC", type='l')
+points(which.min(sig.summary$bic), sig.summary$bic [which.min(sig.summary$bic)],col="red", cex=2, pch=20)
+
+#par(mfrow = c(3,1))
+#plot (reg.sig, scale="adjr2", main = "Nrsq")
+#plot (reg.sig, scale="bic", main = "Nbic")
+#plot (reg.sig, scale="Cp", main = "Nbic")
+
+coef(reg.sig,2)
+#coef(reg.sig,8)
+
+
+# subset of the non significant regressions
+significant <- subset(regression, pvals1<0.1)
+sig_cats <- significant["rev.listofcats1."]
+sig_cats
+str(commonavg.scaled)
+commonavg.wue<-commonavg[is.finite(commonavg$WUE),]
+str(commonavg.wue)
+commonavg.wue.scaled<-commonavg.wue
+commonavg.wue.scaled[6:33]<-scale(commonavg.wue.scaled[6:33])
+str(commonavg.wue.scaled)
+sigwue<-commonavg.wue.scaled[commonavg.scaled$County=="Kern"|commonavg.scaled$County=="Imperial",]
+nswue<-commonavg.wue.scaled[commonavg.scaled$County!="Kern"&commonavg.scaled$County!="Imperial",]
+
+nswue$ETzone<-as.factor(nswue$ETzone)
+str(nswue)
+nswue.leap<-nswue
+
+#M <- cor(nswue.leap[6:34], use = "complete.obs")
+str(nswue.leap)
+nswue.leap<-nswue.leap[-25]
+str(nswue.leap)
+nswue.leap<-nswue.leap[-23]
+nswue.leap<-nswue.leap[-27]
+nswue.leap<-nswue.leap[-24]
+reg.ns<-regsubsets(WUE~., nswue.leap[7:30], nvmax = 20,really.big=T)
+
+ns.summary<-summary(reg.ns)
+
+par(mfrow = c(2,2), mar = c(4,4,2,2))
+plot (ns.summary$rss, xlab="Number of Variables", ylab="RSS", type="l")
+
+plot (ns.summary$adjr2, xlab="Number of Variables", ylab="Adjusted RSq", type="l") 
+points(which.max(ns.summary$adjr2) , ns.summary$adjr2[which.min(ns.summary$bic)], col="red", cex=2, pch=20) 
+
+plot (ns.summary$cp, xlab="Number of Variables", ylab="Cp", type="l") 
+points(which.min(ns.summary$cp), ns.summary$cp [which.min(ns.summary$bic)],col="red",cex=2,pch=20)
+
+plot (ns.summary$bic, xlab="Number of Variables", ylab="BIC", type='l')
+points(which.min(ns.summary$bic), ns.summary$bic [which.min(ns.summary$bic)],col="red", cex=2, pch=20)
+
+#par(mfrow = c(3,1))
+#plot (reg.ns, scale="adjr2", main = "Nrsq")
+#plot (reg.ns, scale="bic", main = "Nbic")
+#plot (reg.ns, scale="Cp", main = "Nbic")
+
+coef(reg.ns,10)
+coef(reg.ns,8)
+
+lmer.wue.ns.10<-(lmer(WUE~Sowing+StripeRust+BYDV+With.Seed+Preplant.N+Tillering+Aq.N+Irr.Applications+Napplications+ETo+(1|County)+(1|Cultivar), nswue))
+lmer.wue.ns.8<-(lmer(WUE~Preplant.N+Tillering+Septoria+LHarvest+Total.K+ETo+Fert.Number+(1|County)+(1|Cultivar), nswue))
+#sjt.lmer(lmer.wue.ns.10, lmer.wue.ns.8)
+
+
+#coef(reg.sig, 8)
+lmer.wue.sig<-(lmer(WUE~Sowing+StripeRust+BYDV+With.Seed+Preplant.N+Tillering+Aq.N+Irr.Applications+Napplications+ETo++(1|Cultivar), sigwue))
+lmer.wue.sig.2<-(lmer(WUE~Preplant.N+Tillering+Septoria+LHarvest+Total.K+ETo+Fert.Number+(1|Cultivar), sigwue))
+#sjt.lmer(lmer.wue.sig, lmer.wue.sig.2, lmer.wue.ns.10, lmer.wue.ns.8)
+#coef(reg.sig, 8)
+library(sjPlot)
+
+lmer.N.sig<-lmer(WUE~Preplant.N+Anthesis.N+Tillering+Aq.N+With.Seed+(1|County/Cultivar)+(1|Texture)+(1|ETzone)+(1|sowingmonth), sigwue)
+lmer.N.ns<-lmer(WUE~Preplant.N+Anthesis.N+Tillering+Aq.N+With.Seed+(1|County/Cultivar)+(1|Texture)+(1|ETzone)+(1|sowingmonth), nswue)
+sjt.lmer(lmer.N.sig, lmer.N.ns,p.kr=FALSE)
+
+lmer.Water.sig<-lmer(WUE~Rain+Irrigation.Total+Irrigation.Method+(1|County/Cultivar)+(1|Texture)+(1|ETzone)+(1|sowingmonth), sigwue)
+lmer.Water.ns<-lmer(WUE~Rain+Irrigation.Total+Irrigation.Method+(1|County/Cultivar)+(1|Texture)+(1|ETzone)+(1|sowingmonth), nswue)
+summary(lmer.Water.sig)
+sjt.lmer(lmer.Water.sig, lmer.Water.ns, p.kr=FALSE)
+```
+#NUE
+```{r}
+###NUE####
+str(commonsite)
+commonsite.NUE<-na.omit(commonsite[-4])
+
+commonsite.nue.avg<-ddply(commonsite.NUE, .(Location, Year), summarise, 
+                          nue = mean(NUE))
+commonsite.nue.avg<-commonsite.nue.avg[is.finite(commonsite.nue.avg$nue),] #getrid of inf values
+
+class(commonsite.nue.avg$Year)
+ggplot(commonsite.nue.avg, aes(y=nue, Year))+geom_point()+facet_wrap(~County, scales = "free")+geom_smooth(method = "lm")
+
+str(commonsite.nue.avg)
+
+listofcats1 <- levels(as.factor(commonsite.nue.avg$County)) #here, remove columns containing categorical variables. I also remove the column for the variable that I'm regressing everything else against. 
+
+#Make dummy variables that you will fill as you run for loop
+pvals1 <- NULL
+R21 <- NULL
+coef1 <- NULL
+
+for (cat in listofcats1) {
+  regress <- lm(Year~nue, data=commonsite.nue.avg[commonsite.nue.avg$County==cat,]) # statistical analysis of interest
+  pvals1 <- c(anova(regress)$'Pr(>F)'[1], pvals1) # change so you're pulling p-values from right place 
+  R21 <- c(summary(regress)$adj.r.squared[1], R21) # etc
+  coef1 <- c(summary(regress)$coef[2], coef1) # pull
+  
+}
+
+pvals.bonf1 <- p.adjust(pvals1, method="bonferroni") # Bonferroni correction for multiple comparisons
+regression <- data.frame(rev(listofcats1), coef1, R21, pvals1, pvals.bonf1)
+regression
+write.csv(regression, '/Users/tobymaxwell/Desktop/regression.nue.csv', 
+          row.names=FALSE) 
+
+significant <- subset(regression, pvals1<0.1)
+sig_cats <- significant["rev.listofcats1."]
+sig_cats
+
+#Sacramento			
+#Madera			
+#Kern			
+#Imperial			
+#Colusa			
+#Butte
+
+##Subset the significant regressions
+str(commonavg.scaled)
+commonavg.nue<-commonavg[is.finite(commonavg$NEff),]
+str(commonavg.nue)
+commonavg.nue$NUE<-commonavg.nue$NEff*commonavg.nue$Yield
+commonavg.nue.scaled<-commonavg.nue
+commonavg.nue.scaled[6:36]<-scale(commonavg.nue.scaled[6:36])
+commonavg.nue.scaled[42]<-scale(commonavg.nue.scaled[42])
+str(commonavg.nue.scaled)
+signue<-commonavg.nue.scaled[commonavg.nue.scaled$County=="Sacramento"|commonavg.nue.scaled$County=="Madera"|commonavg.nue.scaled$County=="Kern"|commonavg.nue.scaled$County=="Colusa"|commonavg.nue.scaled$County=="Butte",]
+nsnue<-commonavg.nue.scaled[commonavg.nue.scaled$County!="Sacramento"|commonavg.nue.scaled$County!="Madera"|commonavg.nue.scaled$County!="Kern"|commonavg.nue.scaled$County!="Imperial"|commonavg.nue.scaled$County!="Colusa"|commonavg.nue.scaled$County!="Butte",]
+impnue<-commonavg.nue.scaled[commonavg.nue.scaled$County=="Imperial",]
+
+list<-c("Preplant.N", "Anthesis.N", "Tillering", "Aq.N", "With.Seed", "Total.P", "Total.K", "Total.N", "Water.Total","Rain","Irrigation.Total","Irrigation.Method","StripeRust","LeafRust","BYDV","Septoria","LHarvest","YellowBerry", "Rain", "MAP", "MAT", "ETo", "deficit")
+  for(i in list){
+  formula <- as.formula(paste0("NUE~", i, "+", paste("(1|Cultivar)", "(1|County)", "(1|Texture)", "(1|ETzone)", "(1|sowingmonth)", sep = "+")))
+  regress <- lmer(formula, data=signue) # statistical analysis of interest
+  assign(noquote(paste0(i)), regress)
+      }
+sjt.lmer(Preplant.N, Anthesis.N, Tillering, Aq.N, With.Seed, Total.P, Total.K, p.kr=FALSE)
+sjt.lmer(Water.Total,Rain,Irrigation.Total,Irrigation.Method, p.kr=FALSE)
+sjt.lmer(StripeRust,LeafRust,BYDV,Septoria,LHarvest,YellowBerry, p.kr=FALSE)
+sjt.lmer(MAP, Rain, MAT, deficit, ETo, p.kr=FALSE)
+
+list<-c("Preplant.N", "Anthesis.N", "Tillering", "Aq.N", "With.Seed", "Total.P", "Total.K", "Total.N", "Water.Total","Rain","Irrigation.Total","Irrigation.Method", "StripeRust", "LeafRust", "BYDV", "Septoria", "LHarvest", "YellowBerry", "Rain", "MAP", "ETo", "MAT", "deficit")
+  for(i in list){
+  formula <- as.formula(paste0("NUE~", i, "+", paste("(1|Cultivar)", "(1|County)","(1|Texture)", "(1|ETzone)", "(1|sowingmonth)", sep = "+")))
+  regress <- lmer(formula, data=nsnue) # statistical analysis of interest
+  assign(noquote(paste0(i)), regress)
+      }
+sjt.lmer(Preplant.N, Anthesis.N, Tillering, Aq.N, With.Seed, Total.P, Total.K, p.kr=FALSE)
+sjt.lmer(Water.Total,Rain,Irrigation.Total,Irrigation.Method, p.kr=FALSE)
+sjt.lmer(StripeRust,LeafRust,BYDV,Septoria,LHarvest,YellowBerry, p.kr=FALSE)
+sjt.lmer(Rain, MAP, MAT, ETo, deficit, p.kr=FALSE)
+
+list<-c("Preplant.N", "Tillering", "Aq.N", "With.Seed", "Total.P", "Total.N", "Water.Total", "Rain","Irrigation.Total", "LHarvest", "YellowBerry", "MAP", "MAT", "ETo", "deficit" )
+  for(i in list){
+  formula <- as.formula(paste0("NUE~", i, "+", paste("(1|Texture)", "(1|Cultivar)", sep = "+")))
+  regress <- lmer(formula, data=impnue) # statistical analysis of interest
+  assign(noquote(paste0(i)), regress)
+  }
+list<-c("BYDV")
+  for(i in list){
+  formula <- as.formula(paste0("NUE~", i, "+", paste("(1|Cultivar)", sep = "+")))
+  regress <- lmer(formula, data=impnue) # statistical analysis of interest
+  assign(noquote(paste0(i)), regress)
+  }
+sjt.lmer(Preplant.N,  Tillering, Aq.N, With.Seed, Total.P, Total.N, p.kr=FALSE)
+sjt.lmer(Water.Total,Rain,Irrigation.Total, p.kr=FALSE)
+sjt.lmer(BYDV,LHarvest,YellowBerry, p.kr=FALSE)
+sjt.lmer(Rain, MAP, MAT, deficit, ETo, p.kr=FALSE)
+
+
+
+#M <- cor(signue.leap[6:34], use = "complete.obs")
+signue.leap<-signue.leap[-24]
+str(signue.leap)
+signue.leap<-signue.leap[-27:-28]
+signue.leap<-signue.leap[-25]
+signue.leap<-signue.leap[-6]
+signue.leap<-signue.leap[-8]
+str(signue.leap)
+
+reg.sig<-regsubsets(NEff~., signue.leap[6:28], nvmax = 20,really.big=T)
+
+sig.summary<-summary(reg.sig)
+
+par(mfrow = c(2,2), mar = c(4,4,2,2))
+plot (sig.summary$rss, xlab="Number of Variables", ylab="RSS", type="l")
+
+plot (sig.summary$adjr2, xlab="Number of Variables", ylab="Adjusted RSq", type="l") 
+points(which.max(sig.summary$adjr2) , sig.summary$adjr2[which.min(sig.summary$bic)], col="red", cex=2, pch=20) 
+
+plot (sig.summary$cp, xlab="Number of Variables", ylab="Cp", type="l") 
+points(which.min(sig.summary$cp), sig.summary$cp [which.min(sig.summary$bic)],col="red",cex=2,pch=20)
+
+plot (sig.summary$bic, xlab="Number of Variables", ylab="BIC", type='l')
+points(which.min(sig.summary$bic), sig.summary$bic [which.min(sig.summary$bic)],col="red", cex=2, pch=20)
+
+par(mfrow = c(3,1))
+plot (reg.sig, scale="adjr2", main = "Nrsq")
+plot (reg.sig, scale="bic", main = "Nbic")
+plot (reg.sig, scale="Cp", main = "Nbic")
+
+coef(reg.sig,6)
+coef(reg.sig,8)
+
+# subset of the non significant regressions
+
+nsnue$ETzone<-as.factor(nsnue$ETzone)
+str(nsnue)
+nsnue.leap<-nsnue
+str(nsnue.leap)
+#M <- cor(nsnue.leap[6:34], use = "complete.obs")
+nsnue.leap<-nsnue.leap[-24]
+str(nsnue.leap)
+nsnue.leap<-nsnue.leap[-27:-28]
+nsnue.leap<-nsnue.leap[-25]
+nsnue.leap<-nsnue.leap[-9]
+reg.ns<-regsubsets(NEff~., nsnue.leap[6:29], nvmax = 20,really.big=T)
+
+ns.summary<-summary(reg.ns)
+
+par(mfrow = c(2,2), mar = c(4,4,2,2))
+plot (ns.summary$rss, xlab="Number of Variables", ylab="RSS", type="l")
+
+plot (ns.summary$adjr2, xlab="Number of Variables", ylab="Adjusted RSq", type="l") 
+points(which.max(ns.summary$adjr2) , ns.summary$adjr2[which.min(ns.summary$bic)], col="red", cex=2, pch=20) 
+
+plot (ns.summary$cp, xlab="Number of Variables", ylab="Cp", type="l") 
+points(which.min(ns.summary$cp), ns.summary$cp [which.min(ns.summary$bic)],col="red",cex=2,pch=20)
+
+plot (ns.summary$bic, xlab="Number of Variables", ylab="BIC", type='l')
+points(which.min(ns.summary$bic), ns.summary$bic [which.min(ns.summary$bic)],col="red", cex=2, pch=20)
+
+par(mfrow = c(3,1))
+plot (reg.ns, scale="adjr2", main = "Nrsq")
+plot (reg.ns, scale="bic", main = "Nbic")
+plot (reg.ns, scale="Cp", main = "Nbic")
+
+coef(reg.ns,10)
+coef(reg.ns,9)
+coef(reg.ns,8)
+coef(reg.ns,4)
+
+lmer.nue.ns.10<-(lmer(NEff~deficit+Sowing+Total.P+With.Seed+Diseasepres+LHarvest+Anthesis.N+Aq.N+Irr.Applications+Fert.Number+(1|County/Cultivar)+(1|Texture)+(1|ETzone), nsnue))
+lmer.nue.ns.9<-(lmer(NEff~deficit+Sowing+StripeRust+Preplant.N+Total.K+Tillering+Anthesis.N+Irr.Applications+Fert.Number+(1|County/Cultivar)+(1|Texture)+(1|ETzone), nsnue))
+lmer.nue.ns.8<-(lmer(NEff~Total.P+Rain+StripeRust+Preplant.N+Total.K+Tillering+Irr.Applications+sowingmonth+(1|County/Cultivar)+(1|Texture)+(1|ETzone), nsnue))
+lmer.nue.ns.4<-(lmer(NEff~Total.P+LHarvest+Total.K+Aq.N+(1|County/Cultivar)+(1|Texture)+(1|ETzone), nsnue))
+#sjt.lmer(lmer.nue.ns.10, lmer.nue.ns.9, lmer.nue.ns.8, lmer.nue.ns.4)
+AIC(lmer.nue.ns.10, lmer.nue.ns.9, lmer.nue.ns.8, lmer.nue.ns.4)
+coef(reg.sig, 7)
+coef(reg.sig, 6)
+coef(reg.sig, 5)
+coef(reg.sig, 4)
+coef(reg.sig, 3)
+lmer.nue.sig.7<-(lmer(NEff~Year+LeafRust+BYDV+Total.K+With.Seed+Tillering+Water.Total+Fert.Number+(1|County/Cultivar)+(1|Texture)+(1|ETzone), signue))
+lmer.nue.sig.6<-(lmer(NEff~Year+LeafRust+BYDV+Tillering+Anthesis.N+Irr.Applications+Fert.Number+(1|County/Cultivar)+(1|Texture)+(1|ETzone), signue))
+lmer.nue.sig.5<-(lmer(NEff~Year+deficit+StripeRust+BYDV+With.Seed+Tillering+(1|County/Cultivar)+(1|Texture)+(1|ETzone), signue))
+lmer.nue.sig.4<-(lmer(NEff~Year+deficit+StripeRust+With.Seed+Tillering+(1|County/Cultivar)+(1|Texture)+(1|ETzone), signue))
+lmer.nue.sig.3<-(lmer(NEff~Year+Tillering+Anthesis.N+Irr.Applications+(1|County/Cultivar)+(1|Texture)+(1|ETzone), signue))
+
+#sjt.lmer(lmer.nue.sig.7, lmer.nue.sig.6, lmer.nue.sig.5, lmer.nue.sig.4, lmer.nue.sig.3)
+AIC(lmer.nue.sig.7, lmer.nue.sig.6, lmer.nue.sig.5, lmer.nue.sig.4, lmer.nue.sig.3)
+```
+##General Model
+```{r}
+sigyield.mod<-NULL
+sigyield.mod$MAT<-sigyield$MAT
+sigyield.mod$Rain<-sigyield$Rain
+sigyield.mod$Irrigation.Method<-sigyield$Irrigation.Method
+sigyield.mod$Preplant.N<-sigyield$Preplant.N
+sigyield.mod$Aq.N<-sigyield$Aq.N
+sigyield.mod$Tillering<-sigyield$Tillering
+sigyield.mod$Anthesis.N<-sigyield$Anthesis.N 
+sigyield.mod$With.Seed<-sigyield$With.Seed
+sigyield.mod$Texture<-sigyield$Texture
+sigyield.mod$Cultivar<-sigyield$Cultivar
+sigyield.mod$County<-sigyield$County
+sigyield.mod$ETzone<-sigyield$ETzone 
+sigyield.mod$sowingmonth<-sigyield$sowingmonth
+
+sigyield.mod$Yield<-sigyield$Yield
+
+sigyield.mod<-data.frame(na.omit(sigyield.mod))
+str(sigyield.mod)
+m.sigyield<-lmer(Yield~MAT+Rain+Irrigation.Method+Preplant.N+Aq.N+Tillering+Anthesis.N+With.Seed+(1|Cultivar) +(1|Texture)+(1|County)+(1|ETzone)+(1|sowingmonth), sigyield.mod)
+sjt.lmer(m.sigyield, p.kr=FALSE)
+summary(m.sigyield)
+
+m.nsyield<-lmer(Yield~MAT+Rain+Water.Total+Irrigation.Method+Preplant.N+Aq.N+Tillering+Anthesis.N+With.Seed+(1|Cultivar)+ (1|Texture) + (1|County) +(1|ETzone) + (1|sowingmonth), nsyield)
+sjt.lmer(m.nsyield, p.kr=FALSE)
+
+summary(m.sigyield)
+str(sigyield.mod)
+sigyield.MAT<-sigyield.mod
+sigyield.MAT$MAT=sigyield.mod$MAT+5
+sigyield.MAT$Rain=sigyield.mod$Rain*1.25
+str(sigyield.MAT)
+str(sigyield.mod)
+sigmod.avg<-ddply(sigyield.MAT, .(County), summarise,
+      Yield.sd = sd(Yield),
+      Yield = mean(Yield),
+      MAT = mean(MAT),
+      Rain=mean(Rain))
+library(lme4)
+library(merTools)
+PI<-predictInterval(m.sigyield)
+PI.MAT<-predictInterval(m.sigyield, newdata=sigyield.MAT)
+PI.MAT$County<-sigyield.MAT$County
+PI.MAT.avg<-ddply(PI.MAT, .(County), summarise,
+      fit=mean(fit),
+      upper=mean(upr))
+PI.MAT.avg
+sigmod.avg
+sjt.lmer(m.sigyield, p.kr=FALSE)
+yieldall<-lmer(Yield~MAT*Texture+Texture*Total.N+(1|Cultivar) + (1|County)+(1|ETzone)+(1|sowingmonth), commonavg.scaled)
+sjt.lmer(yieldall, p.kr=FALSE)
+predict(yieldall)
+commonavg.scaled$model<-predict(yieldall)
+
+df.sigyield<-NULL
+df.sigyield$model<-predict(m.sigyield)
+df.sigyield$model.MAT<-PI.MAT$fit
+df.sigyield$COUNTY<-sigyield.mod$County
+df.sigyield<-as.data.frame(df.sigyield)
+str(df.sigyield)
+df.sigyield<-ddply(df.sigyield, .(COUNTY),summarise,
+                     sdmodel=sd(model),
+                   model=mean(model),
+                   sdfit=sd(model.MAT),
+                   fit=mean(model.MAT))
+df.sigyield
+vca.sig<-merge(vca.merge, df.sigyield, by.x="NAME", by.y="COUNTY")
+data.frame(vca.sig)$Yield.sd
+sig.map<-tm_shape(CA)+tm_borders(col = "black", alpha = 1)+tm_shape(vca.sig)+tm_polygons(alpha = 1, col = "fit", palette = "Greens", legend.hist = T)+tm_text("NAME", size = .5, col = "black")
+sig.map
+tmap_arrange(yield.map,sig.map)
+
+sigyield
+
+str(data.frame(vca.sig))
+```

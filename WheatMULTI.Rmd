@@ -1,0 +1,157 @@
+---
+title: "WheatMULTI"
+author: "Toby Maxwell"
+date: "September 5, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(glmulti)
+library(rJava)
+str(commonavg)
+Yield.multi<-glmulti(Yield~pdsi.q1+MAT+MAP+CO2+Water.Total+Total.N+Preplant.N+Anthesis.N, level = 1, crit = aicc, confsetsize=16, data = commonavg.scaled )
+plot(Yield.multi, type = "s")
+weightable(Yield.multi)
+WT<-weightable(Yield.multi)
+length(WT[WT$weights>0.01,]$weights)
+yield.1<-lm(Yield ~ 1 + Texture + Irrigation.Method + MAP + CO2 + Water.Total + Total.N, commonavg.scaled)
+library(visreg)
+visreg(yield.1)
+```
+
+```{r}
+library(MuMIn)
+y1<-lm(Yield ~ 1 +MAP + CO2 + Water.Total + Total.N + Preplant.N + Anthesis.N, commonavg.scaled)
+y2<-lm(Yield ~ 1 +MAT + MAP + CO2 + Water.Total + Total.N + Preplant.N + Anthesis.N, commonavg.scaled)
+y3<-lm(Yield ~ 1 +pdsi.q1 + MAP + CO2 + Water.Total + Total.N + Preplant.N + Anthesis.N, commonavg.scaled)
+y4<-lm(Yield ~ 1 +pdsi.q1 + MAT + MAP + CO2 + Water.Total + Total.N + Preplant.N + Anthesis.N, commonavg.scaled)
+
+y.ave<-model.avg(y1, y2, y3, y4)
+summary(y.ave)
+y.ave$importance[4]
+```
+
+```{r}
+list<-levels(sites.df$Name)
+list<-list[-7]
+list<-list[-8]
+list<-list[-36]
+list<-list[-8]
+list<-list[-35]
+list<-list[-40]
+
+multi<-NULL
+importance.all<-NULL
+models<-paste0(rep("y",10), c(1:16), sep=",")
+#Find top 16 best models for the model labeled multi and then extract 
+for (i in list[40]){
+  multi<-glmulti(Yield~pdsi.q1+MAT+MAP+CO2+Water.Total+Total.N+Preplant.N+Anthesis.N+Tillering, level = 1, crit = aicc, confsetsize=16, data = commonavg.scaled[commonavg.scaled$Location==i,])
+  WT<-weightable(multi)
+  L<-length(WT[WT$weights>0.01,]$weights)
+for(j in 1:16){
+  formula<-as.formula(paste(WT[j,1]))
+  mod<-lm(formula, data = commonavg.scaled[commonavg.scaled$Location==i,])
+  assign(paste0("y", j),mod)
+}
+ model.average<-model.avg(y1,y2, y3, y4, y5, y6,y7,y8,y9,y10,y11,y12,y13,y14,y15,y16)
+  #model.average<-model.avg(noquote(paste(c(models[2:L],"y1"))))
+  importance<-summary(model.average)$importance
+  assign(paste0(i, "mod.avg"), model.average)
+  assign(paste0(i, "mod.imp"), importance)
+  importance<-data.frame(importance)
+  importance$ID<-rownames(importance)
+  importance$coef<-coef(model.average)[-1]
+  #importance.1<-importance[importance$ID=="pdsi.q1"|importance$ID=="pdsi.q2"|importance$ID=="pdsi.q4",]
+  #importance.1$Location<-c(i)
+  #importance.1$q<-rownames(importance.1)
+  #pdsi.importance<-rbind(pdsi.importance, importance.1)
+  importance.2<-importance[importance$ID=="Preplant.N"|importance$ID=="Anthesis.N"|importance$ID=="Tillering"|importance$ID=="Total.N"|importance$ID=="MAP"|importance$ID=="MAT"|importance$ID=="CO2"|importance$ID=="pdsi.q1"|importance$ID=="Water.Total",]
+  importance.2$Location<-c(i)
+  importance.all<-rbind(importance.all, importance.2)
+ # importance.3<-importance[importance$ID=="CO2",]
+  #importance.3$Location<-c(i)
+  #CO2.importance<-rbind(CO2.importance, importance.3)
+}
+importance.all$sign<-ifelse(importance.all$coef<0,"-","+")
+importance.all[is.na(importance.all$sign),]$sign<-"0"
+importance.all$sign
+```
+
+```{r}
+str(commonavg.scaled)
+library(plyr)
+commonavg.county<-ddply(commonavg, .(Cultivar, County), summarise,
+                        Yield = mean(Yield),
+                        WUE=mean(WUE),
+                        pdsi.q1=mean(pdsi.q1),
+                        MAT=mean(MAT),
+                        MAP=mean(MAP),
+                        CO2=mean(CO2),
+                        Water.Total=mean(Water.Total),
+                        Rain=mean(Rain),
+                        Total.N=mean(Total.N),
+                        Preplant.N=mean(Preplant.N),
+                        Anthesis.N = mean(Anthesis.N),
+                        Tillering = mean(Tillering))
+str(commonavg.county)
+commonavg.county<-na.omit(commonavg.county)
+commonavg.county<-commonavg.county[is.finite(commonavg.county$WUE),]
+options(na.action = "na.fail")
+list<-levels(commonavg.county$County)
+list<-list[-14:-15]
+list<-list[-15]
+list<-list[-16]
+list<-list[-14]#WUE and NUE only
+list<-list[-4]#NUE only
+list<-list[-7]#NUE only
+list<-list[-11]#NUE only
+list<-list[-12]#NUE only
+importance.counties<-NULL
+#Find best models (within 2 AICc of best) for the model labeled multi and then extract importance and coefficients
+library(MuMIn)
+for (i in list){
+  model<-lm(WUE~pdsi.q1+MAT+MAP+CO2+Water.Total+Rain+Total.N+Preplant.N+Anthesis.N+Tillering, data = commonavg.county[commonavg.county$County==i,])
+  multi<-dredge(model)
+  multi.cut<-multi[multi$AICc<min(multi$AICc+2),]
+  model.average<-model.avg(multi.cut)
+  importance<-summary(model.average)$importance
+  importance<-data.frame(importance)
+  importance$ID<-rownames(importance)
+  importance$coef<-na.omit(coef(model.average)[-1])
+  importance.2<-importance[importance$ID=="Preplant.N"|importance$ID=="Anthesis.N"|importance$ID=="Tillering"|importance$ID=="Total.N"|importance$ID=="MAP"|importance$ID=="MAT"|importance$ID=="CO2"|importance$ID=="pdsi.q1"|importance$ID=="Water.Total"|importance$ID=="Rain",]
+  importance.2$Location<-c(i)
+  importance.counties<-rbind(importance.counties, importance.2, make.row.names=F)
+}
+
+importance.counties$sign<-ifelse(importance.counties$coef<0,"-","+")
+importance.counties$sign
+
+
+yield.importance<-importance.counties
+WUE.importance<-importance.counties
+
+```
+#All sites
+```{r}
+  model<-lm(Yield~pdsi.q1+MAT+MAP+CO2+Water.Total+Rain+Total.N+Preplant.N+Anthesis.N+Tillering+County, data = na.omit(commonavg.county))
+summary(model)
+options(na.action = "na.fail")
+  multi<-dredge(model, trace=2)
+  multi.cut<-multi[multi$AICc<min(multi$AICc+2),]
+  multi.cut<-multi[1:(length(multi$AICc)*.05),]
+  model.average<-model.avg(multi.cut, fit=TRUE)
+class(model.average)
+str(model.average)
+plot(predict(model.average)~Yield, na.omit(commonavg.county))
+commonavg.county$Predict<-predict(model.average)
+summary(lm(Predict~Yield, commonavg.county))
+str(commonavg.county)
+model.average$importance
+
+library(lme4)
+model.lmer<-lmer(Yield~pdsi.q1+MAT+MAP+CO2+Water.Total+Rain+Total.N+Preplant.N+Anthesis.N+Tillering+(1|County)+(1|Texture), data = commonavg)
+lm(resid(model.lmer)~sowingmonth, commonavg)
+
+```
+
+

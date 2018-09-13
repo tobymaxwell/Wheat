@@ -5,8 +5,6 @@
 # Session Data files
 .RData
 
-.csv
-
 # Example code in package build process
 *-Ex.R
 
@@ -36,3 +34,9 @@ vignettes/*.pdf
 
 # Shiny token, see https://shiny.rstudio.com/articles/shinyapps.html
 rsconnect/
+
+#text files
+*.csv
+*.txt
+*.xls
+*.xlsx
